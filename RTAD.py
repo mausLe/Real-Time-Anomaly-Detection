@@ -119,18 +119,26 @@ def image_detection(image_path, network, class_names, class_colors, thresh):
     # Darknet doesn't accept numpy images.
     # Create one with image we reuse for each detect
     width = darknet.network_width(network)
+    print("1")
     height = darknet.network_height(network)
+    print("2")
     darknet_image = darknet.make_image(width, height, 3)
+    print("3")
 
     image = cv2.imread(image_path)
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image_resized = cv2.resize(image_rgb, (width, height),
                                interpolation=cv2.INTER_LINEAR)
+    print("4")
 
     darknet.copy_image_from_bytes(darknet_image, image_resized.tobytes())
+    print("5")
+    
     detections = darknet.detect_image(network, class_names, darknet_image, thresh=thresh)
+    print("6")
     darknet.free_image(darknet_image)
     image = darknet.draw_boxes(detections, image_resized, class_colors)
+    print("7")
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB), detections
 
 def convert2relative(image, bbox):
@@ -187,18 +195,16 @@ count = 0
 
 for imageDir in images:
     prev_time = time.time()
-
     print("dir ", imageDir)
     # Run GAN to calc MSE
     generatePSNR(imageDir, count)
-    """
+
     # Run yolo to detect object and export infos
     image, detections = image_detection(imageDir, network, 
     class_names, class_colors, thresh)
 
     if save_labels:
         save_annotations(imageDir, image, detections, class_names)
-    """
     fps = int(1/(time.time() - prev_time))
     print("FPS: {}".format(fps))
     count += 1
