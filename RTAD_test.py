@@ -152,6 +152,129 @@ def save_annotations(name, image, detections, class_names):
             label = class_names.index(label)
             f.write("{} {:.4f} {:.4f} {:.4f} {:.4f} {:.4f}\n".format(label, x, y, w, h, float(confidence)))
 
+
+def createTrainFS (yoloData, psnrError):
+    global Train_FS, trainingClasses
+        
+    # YOlo input ratio
+    ratio = 256
+    for i in range (4, len(yoloData)): # Pass the first 4 images
+        mse =  1/psnrError[i] # Image frame error
+        isObjectIn = False
+
+        if len(yoloData[i]) != 0: # if yolo detect >= 1 object
+            for obj in yoloData[i]:
+                if obj['confidence'] >= 0.6: # Filter Class that it's confidence score < 0.6
+                    if obj['name'] not in trainingClasses:
+                        trainingClasses.append(obj['name'])
+                        print("New object at frame {} name {}".format(i, obj['name']))
+
+                    y = obj['relative_coordinates']['center_y']*ratio  # top left corner
+                    x = obj['relative_coordinates']['center_x']*ratio # top left corner
+                    h = obj['relative_coordinates']['height']*ratio # height
+                    w = obj['relative_coordinates']['width']*ratio # width
+
+                    cx = x + w/2
+                    cy = y + h/2
+                    area = w*h
+
+                    probs = np.zeros((1,15))
+                    probs[0,trainingClasses.index(obj['name'])] = obj['confidence']
+                    fs = [mse,cx,cy,area] + list(probs[0,:])
+                    Train_FS.append(fs)
+
+                    isObjectIn = True
+
+        if isObjectIn == False:
+            cx = cy = area = 0
+            probs = np.zeros((1,15))
+            fs = [mse,cx,cy,area] + list(probs[0,:])
+            Train_FS.append(fs)
+
+    # return Train_FS
+
+
+def createTestFS (yoloFrameData, psnrFrameError):
+    """
+    yoloFrameData :
+    psnrFrameError : 
+    """
+    global Test_FS, testingClasses
+    mse = 1/psnrFrameError
+    
+    # Yolo input ratio
+    ratio = 256
+    isObjectIn = False
+    if len(yoloFrameData) != 0: # if yolo detect >= 1 object
+        for obj in yoloFrameData:
+            if obj['confidence'] >= 0.6: # Filter Class that it's confidence score < 0.6
+                if obj['name'] not in testingClasses:
+                    testingClasses.append(obj['name'])
+                    print("New object at frame name {}".format(obj['name']))
+
+                y = obj['relative_coordinates']['center_y']*ratio  # top left corner
+                x = obj['relative_coordinates']['center_x']*ratio # top left corner
+                h = obj['relative_coordinates']['height']*ratio # height
+                w = obj['relative_coordinates']['width']*ratio # width
+
+                cx = x + w/2
+                cy = y + h/2
+                area = w*h
+
+                probs = np.zeros((1,15))
+                probs[0,testingClasses.index(obj['name'])] = obj['confidence']
+                fs = [mse,cx,cy,area] + list(probs[0,:])
+                Test_FS.append(fs)
+                
+                isObjectIn = True
+
+    if isObjectIn == False:
+        cx = cy = area = 0
+        probs = np.zeros((1,15))
+        fs = [mse,cx,cy,area] + list(probs[0,:])
+        Test_FS.append(fs)
+
+    # return Test_FS
+
+def normalizeTrainFS(g_max, g_min):
+    Train_FS_N = Train_FS*1
+    for i in range(0,4):
+        Train_FS_N[:,i] = (Train_FS[:,i] - g_min[i])/(g_max[i]-g_min[i])
+
+    for i in range(1,4):                            
+        Train_FS_N[:,i] = 0.2*(Train_FS_N[:,i])
+
+    for i in range(4,5):                            
+        Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
+
+    print("Train_FS_N: ", Train_FS_N[0])
+    return Train_FS_N
+
+def normalizeTestFS(Test_FrameFS, g_max, g_min):
+    for m in range(0,4):
+        Test_FrameFS[m] = (Test_FrameFS[m] - g_min[m])/(g_max[m]-g_min[m])
+            
+    for m in range(1,4):
+        Test_FrameFS[m] = 0.2*(Test_FrameFS[m])
+        
+    for m in range(4,5):
+        Test_FrameFS[m] = 0*(Test_FrameFS[m])
+        
+    for m in range(5,18):
+        if Test_FrameFS[m] != 0:
+            (Test_FrameFS[m]) = 0.9
+        
+    print("Test_FS_N: ", Test_FrameFS)
+    return Test_FrameFS
+
+# Train the Training Feature Space with KNN distance
+def knndis_tr(t,X_M):
+    Mg = X_M.shape[1]
+    
+    dist = np.sum((np.transpose(np.matlib.repmat(t,Mg,1)) - X_M)**2,0) 
+    dist = np.sort(dist)
+    return sum(dist[1:11])
+
 sess = tf.compat.v1.Session(config=config)
 
 # Initialize for Tensorflow
@@ -185,6 +308,38 @@ images = sorted(glob.glob("/content/Data/test/*.jpg"))
 count = 0
 # print("Images: ", images)
 
+# Initialize MONAD
+# Create Training Feature Space
+Train_FS = list()
+trainingClasses = list()
+
+# Call this func to create Training Feature Space
+createTrainFS()
+Train_FS = np.array(Train_FS)
+print("Training classes: ", trainingClasses)
+
+g_min = np.min(Train_FS,0)
+g_max = np.max(Train_FS,0)
+print("g_max: ", g_max)
+print("g_min: ", g_min)
+
+# Normalize Feature Space
+# Check the w1, w2, w3 on the paper
+# But these number quite different from what on KevalDoshi notebook :/ 
+Train_FS_N = normalizeTrainFS(g_max, g_min) 
+
+
+
+# Create Testing Feature Space
+Test_FS = list()
+testingClasses = list()
+
+
+
+count = 4
+
+
+
 for imageDir in images:
     prev_time = time.time()
     print("dir ", imageDir)
@@ -197,6 +352,12 @@ for imageDir in images:
 
     # image.save("/content/test/yolo_output/" + str(count).zfill(6) + ".jpg")
     print("detection: ", detections)
+
+
+
+    # Normalization
+    # normalizeTestFS(Test_FrameFS=, g_max, g_min)
+
 
     if save_labels:
         save_annotations(imageDir, image, detections, class_names)
