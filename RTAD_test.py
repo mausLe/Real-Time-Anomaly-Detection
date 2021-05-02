@@ -207,22 +207,25 @@ def createTestFS (yoloFrameData, psnrFrameError):
     isObjectIn = False
     if len(yoloFrameData) != 0: # if yolo detect >= 1 object
         for obj in yoloFrameData:
-            if obj['confidence'] >= 0.6: # Filter Class that it's confidence score < 0.6
-                if obj['name'] not in testingClasses:
-                    testingClasses.append(obj['name'])
-                    print("New object at frame name {}".format(obj['name']))
+            # print("my Object: ", obj)
+            if float(obj[1]) >= 80: # Filter Class that it's confidence score < 0.6
+                if obj[0] not in testingClasses:
+                    testingClasses.append(obj[0])
+                    print("New object at frame name {}".format(obj[0]))
 
-                y = obj['relative_coordinates']['center_y']*ratio  # top left corner
-                x = obj['relative_coordinates']['center_x']*ratio # top left corner
-                h = obj['relative_coordinates']['height']*ratio # height
-                w = obj['relative_coordinates']['width']*ratio # width
+                
+                y = obj[2][1]  # top left corner
+                x = obj[2][0] # top left corner
+                h = obj[2][3] # height
+                w = obj[2][2] # width
+                print("Class {} -  Score {} ".format(obj[0], obj[1]))
 
                 cx = x + w/2
                 cy = y + h/2
                 area = w*h
 
                 probs = np.zeros((1,15))
-                probs[0,testingClasses.index(obj['name'])] = obj['confidence']
+                probs[0,testingClasses.index(obj[0])] = float(obj[1])
                 fs = [mse,cx,cy,area] + list(probs[0,:])
                 Test_FS.append(fs)
                 
@@ -247,7 +250,7 @@ def normalizeTrainFS(g_max, g_min):
     for i in range(4,5):                            
         Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
 
-    print("Train_FS_N: ", Train_FS_N[0])
+    print("Train_FS_N[10]: ", Train_FS_N[10])
     return Train_FS_N
 
 def normalizeTestFS(Test_FrameFS, g_max, g_min):
@@ -301,9 +304,6 @@ network, class_names, class_colors = darknet.load_network(
     batch_size=batch_size
 )
 
-print("-"*40)
-# images = sorted(glob.glob("/content/Data/ped2/testing/frames/01/*.jpg"))
-images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
 count = 0
 # print("Images: ", images)
@@ -313,8 +313,24 @@ count = 0
 Train_FS = list()
 trainingClasses = list()
 
+import json
+with open('result_train_ucsd.json', 'r') as f:
+    D = json.load(f)
+
+train_objects = []
+for i in range(len(D)):
+    train_objects.append(D[i]["objects"])
+
+
+psnr_train = np.load('ped2_train',allow_pickle=True)['psnr']
+psnrError = []
+for vid in psnr_train:
+    for ps  in vid:
+        psnrError.append(ps)
+
+
 # Call this func to create Training Feature Space
-createTrainFS()
+createTrainFS(train_objects, psnrError)
 Train_FS = np.array(Train_FS)
 print("Training classes: ", trainingClasses)
 
@@ -327,42 +343,79 @@ print("g_min: ", g_min)
 # Check the w1, w2, w3 on the paper
 # But these number quite different from what on KevalDoshi notebook :/ 
 Train_FS_N = normalizeTrainFS(g_max, g_min) 
+print("Train_FS_N[250]: ", Train_FS_N[250])
 
-
+np.random.shuffle(Train_FS_N)
+print("Train_FS_N: ", Train_FS_N.shape)
 
 # Create Testing Feature Space
 Test_FS = list()
 testingClasses = list()
 
 
+import numpy.matlib
+errors = list()
+np.random.shuffle(Train_FS_N)
+Ng = 1000
+Mg = Train_FS_N.shape[0] - 1000
 
+X_N = Train_FS_N[0:Ng]
+X_M = Train_FS_N[Ng:-1]
+
+for i in range(Ng):
+    
+    e = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
+    errors.append(e)
+    if i% 10 == 0:
+        print(i,e)
+
+Base_lm = np.sort(errors)[int(len(errors)*0.9)]
+
+print("-"*40)
+print("Training Train_FS succesful!")
+print("Base_lm: ", Base_lm)
+
+plt.plot(np.sort(errors)[1:999])
+plt.savefig("/content/Train_FS_N.png")
+plt.close()
 count = 4
 
+print("-"*40)
+# images = sorted(glob.glob("/content/Data/ped2/testing/frames/01/*.jpg"))
+images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
-
+psnr = None
+count = 0
 for imageDir in images:
     prev_time = time.time()
     print("dir ", imageDir)
     # Run GAN to calc MSE
-    generatePSNR(imageDir, count)
+    psnr = generatePSNR(imageDir, count)
 
     # Run yolo to detect object and export infos
     image, detections = image_detection(imageDir, network, 
     class_names, class_colors, thresh)
 
     # image.save("/content/test/yolo_output/" + str(count).zfill(6) + ".jpg")
-    print("detection: ", detections)
+    # print("detection: ", detections)
 
-
-
-    # Normalization
-    # normalizeTestFS(Test_FrameFS=, g_max, g_min)
-
+    if psnr is not None:
+      createTestFS(detections, psnr)
+      print("Test FS: ", Test_FS[len(Test_FS) - 1])
+      print("Testing classes: ", testingClasses)
+      count += 1
+      # Normalization
+      normalized_FS = normalizeTestFS(Test_FS[len(Test_FS) - 1], g_max, g_min)
+      Test_FS[len(Test_FS) - 1].append(normalized_FS)
+      
 
     if save_labels:
         save_annotations(imageDir, image, detections, class_names)
     fps = int(1/(time.time() - prev_time))
     print("FPS: {}".format(fps))
-    count += 1
+
+
+# Test
+
 
 sess.close()
