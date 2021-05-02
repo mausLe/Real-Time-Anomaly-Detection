@@ -200,6 +200,9 @@ def createTestFS (yoloFrameData, psnrFrameError):
     psnrFrameError : 
     """
     global Test_FS, testingClasses
+
+    Frame_FS = [] # Contrain feature space of that frame
+
     mse = 1/psnrFrameError
     
     # Yolo input ratio
@@ -228,6 +231,7 @@ def createTestFS (yoloFrameData, psnrFrameError):
                 probs[0,testingClasses.index(obj[0])] = float(obj[1])
                 fs = [mse,cx,cy,area] + list(probs[0,:])
                 Test_FS.append(fs)
+                Frame_FS.append(fs)
                 
                 isObjectIn = True
 
@@ -236,8 +240,9 @@ def createTestFS (yoloFrameData, psnrFrameError):
         probs = np.zeros((1,15))
         fs = [mse,cx,cy,area] + list(probs[0,:])
         Test_FS.append(fs)
+        Frame_FS.append(fs)
 
-    # return Test_FS
+    return Frame_FS
 
 def normalizeTrainFS(g_max, g_min):
     Train_FS_N = Train_FS*1
@@ -386,6 +391,7 @@ images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
 psnr = None
 count = 0
+figData = [0]
 for imageDir in images:
     prev_time = time.time()
     print("dir ", imageDir)
@@ -399,23 +405,48 @@ for imageDir in images:
     # image.save("/content/test/yolo_output/" + str(count).zfill(6) + ".jpg")
     # print("detection: ", detections)
 
-    if psnr is not None:
-      createTestFS(detections, psnr)
-      print("Test FS: ", Test_FS[len(Test_FS) - 1])
-      print("Testing classes: ", testingClasses)
-      count += 1
-      # Normalization
-      normalized_FS = normalizeTestFS(Test_FS[len(Test_FS) - 1], g_max, g_min)
-      Test_FS[len(Test_FS) - 1].append(normalized_FS)
-      
+    if psnr is None:
+        fps = int(1/(time.time() - prev_time))
+        print("FPS: {}".format(fps))
+        continue
 
+    frame_FS = createTestFS(detections, psnr)
+    print("Test FS: ", Test_FS[len(Test_FS) - 1])
+    print("Testing classes: ", testingClasses)
+    count += 1
+    # Normalization
+    # normalized_FS = normalizeTestFS(Test_FS[len(Test_FS) - 1], g_max, g_min)
+    
+    
+    t = list()
+    normalized_FS = normalizeTestFS(frame_FS, g_max, g_min)
+    # Test_FS[len(Test_FS) - 1].append(normalized_FS)
+    
+    # Calc testing score
+    # frame_FS = normalized_FS
+    for obj in normalized_FS:
+        res = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
+        t.append(res)
+
+    dis = (np.max(t)) - 0.8  # IDK what 0.8 means :(
+    print("Test_FS Error: ", dis)
+    figData.append(np.max((0,figData[i] + dis)))
+
+    if count > 5:
+        if figData[count+1] - figData[count] <=0:
+            if figData[count] - figData[count-1] <=0:
+                if figData[count-1] - figData[count-2] <=0:
+                    figData[count+1] = 0
+    
     if save_labels:
         save_annotations(imageDir, image, detections, class_names)
     fps = int(1/(time.time() - prev_time))
     print("FPS: {}".format(fps))
 
 
-# Test
+plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)))
+plt.savefig("/content/Train_FS_N.png")
+plt.close()
 
-
+#
 sess.close()
