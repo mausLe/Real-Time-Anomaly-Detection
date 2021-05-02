@@ -211,7 +211,7 @@ def createTestFS (yoloFrameData, psnrFrameError):
     if len(yoloFrameData) != 0: # if yolo detect >= 1 object
         for obj in yoloFrameData:
             # print("my Object: ", obj)
-            if float(obj[1]) >= 80: # Filter Class that it's confidence score < 0.6
+            if float(obj[1]) >= 40: # Filter Class that it's confidence score < 0.6
                 if obj[0] not in testingClasses:
                     testingClasses.append(obj[0])
                     print("New object at frame name {}".format(obj[0]))
@@ -255,24 +255,31 @@ def normalizeTrainFS(g_max, g_min):
     for i in range(4,5):                            
         Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
 
-    print("Train_FS_N[10]: ", Train_FS_N[10])
+    # print("Train_FS_N[10]: ", Train_FS_N[10])
     return Train_FS_N
 
 def normalizeTestFS(Test_FrameFS, g_max, g_min):
-    for m in range(0,4):
-        Test_FrameFS[m] = (Test_FrameFS[m] - g_min[m])/(g_max[m]-g_min[m])
-            
-    for m in range(1,4):
-        Test_FrameFS[m] = 0.2*(Test_FrameFS[m])
-        
-    for m in range(4,5):
-        Test_FrameFS[m] = 0*(Test_FrameFS[m])
-        
-    for m in range(5,18):
-        if Test_FrameFS[m] != 0:
-            (Test_FrameFS[m]) = 0.9
-        
-    print("Test_FS_N: ", Test_FrameFS)
+    # print("Test_FrameFS: ", Test_FrameFS)
+    # print("g_max", g_max)
+    # print("g_min", g_min)
+
+
+    for i in range (len(Test_FrameFS)):
+        for m in range(0,4):
+            # print("i m", i, m)
+            Test_FrameFS[i][m] = (Test_FrameFS[i][m] - g_min[m])/(g_max[m]-g_min[m])
+
+        for m in range(1,4):
+            Test_FrameFS[i][m] = 0.2*(Test_FrameFS[i][m])
+
+        for m in range(4,5):
+            Test_FrameFS[i][m] = 0*(Test_FrameFS[i][m])
+
+        for m in range(5,18):
+            if Test_FrameFS[i][m] != 0:
+                (Test_FrameFS[i][m]) = 0.9
+
+    # print("Test_FS_N: ", Test_FrameFS)
     return Test_FrameFS
 
 # Train the Training Feature Space with KNN distance
@@ -282,6 +289,14 @@ def knndis_tr(t,X_M):
     dist = np.sum((np.transpose(np.matlib.repmat(t,Mg,1)) - X_M)**2,0) 
     dist = np.sort(dist)
     return sum(dist[1:11])
+
+def knndis(t,X_M):
+    Mg = X_M.shape[1]
+
+    
+    dist = np.sum((np.transpose(np.matlib.repmat(t,Mg,1)) - X_M)**2,0) 
+    dist = np.sort(dist)
+    return sum(dist[0:10])
 
 sess = tf.compat.v1.Session(config=config)
 
@@ -371,7 +386,7 @@ for i in range(Ng):
     
     e = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
     errors.append(e)
-    if i% 10 == 0:
+    if i% 50 == 0:
         print(i,e)
 
 Base_lm = np.sort(errors)[int(len(errors)*0.9)]
@@ -392,7 +407,8 @@ images = sorted(glob.glob("/content/Data/test/*.jpg"))
 psnr = None
 count = 0
 figData = [0]
-for imageDir in images:
+ind = 0
+for imageDir in images[600:1000]: # Apple Store stolen images[600:1000]
     prev_time = time.time()
     print("dir ", imageDir)
     # Run GAN to calc MSE
@@ -401,6 +417,7 @@ for imageDir in images:
     # Run yolo to detect object and export infos
     image, detections = image_detection(imageDir, network, 
     class_names, class_colors, thresh)
+    
 
     # image.save("/content/test/yolo_output/" + str(count).zfill(6) + ".jpg")
     # print("detection: ", detections)
@@ -411,8 +428,8 @@ for imageDir in images:
         continue
 
     frame_FS = createTestFS(detections, psnr)
-    print("Test FS: ", Test_FS[len(Test_FS) - 1])
-    print("Testing classes: ", testingClasses)
+    # print("Test FS: ", Test_FS[len(Test_FS) - 1])
+    # print("Testing classes: ", testingClasses)
     count += 1
     # Normalization
     # normalized_FS = normalizeTestFS(Test_FS[len(Test_FS) - 1], g_max, g_min)
@@ -424,28 +441,43 @@ for imageDir in images:
     
     # Calc testing score
     # frame_FS = normalized_FS
+
     for obj in normalized_FS:
-        res = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
-        t.append(res)
+        t.append(obj[0] + knndis(np.transpose(obj[1:]),np.transpose(Train_FS_N[Ng:-1, 1:])))
 
     dis = (np.max(t)) - 0.8  # IDK what 0.8 means :(
-    print("Test_FS Error: ", dis)
-    figData.append(np.max((0,figData[i] + dis)))
-
-    if count > 5:
-        if figData[count+1] - figData[count] <=0:
-            if figData[count] - figData[count-1] <=0:
-                if figData[count-1] - figData[count-2] <=0:
-                    figData[count+1] = 0
+    # print("Test_FS Error: ", dis)
+    figData.append(np.max((0,figData[ind] + dis)))
     
+
+    if ind > 5:
+        if figData[ind+1] - figData[ind] <=0:
+            if figData[ind] - figData[ind-1] <=0:
+                if figData[ind-1] - figData[ind-2] <=0:
+                    figData[ind+1] = 0
+    ind += 1
     if save_labels:
         save_annotations(imageDir, image, detections, class_names)
     fps = int(1/(time.time() - prev_time))
     print("FPS: {}".format(fps))
 
 
+figData.pop(0)
+idx = np.where(np.array(figData)>0)[0]
+for id1 in range(0,len(idx)-6):
+    if idx[id1+6] - idx[id1] >= 10:
+        figData[idx[id1]] = 0
+
+for id2 in range(0,len(idx)-50):
+    if idx[id2+50] - idx[id2] >= 54:
+        figData[idx[id2]] = 0
+        
+for id1 in range(0,len(idx)-6):
+    if idx[id1+5] - idx[id1] >= 6:
+        figData[idx[id1]] = 0
+
 plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)))
-plt.savefig("/content/Train_FS_N.png")
+plt.savefig("/content/Test_FS_N 1.png")
 plt.close()
 
 #
