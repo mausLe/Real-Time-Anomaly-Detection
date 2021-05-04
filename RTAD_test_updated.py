@@ -166,6 +166,7 @@ def createTrainFS (yoloData, psnrError):
             for obj in yoloData[i]:
                 if obj['confidence'] >= 0.6: # Filter Class that it's confidence score < 0.6
                     if obj['name'] not in trainingClasses:
+                        continue
                         trainingClasses.append(obj['name'])
                         print("New object at frame {} name {}".format(i, obj['name']))
 
@@ -206,13 +207,14 @@ def createTestFS (yoloFrameData, psnrFrameError):
     mse = 1/psnrFrameError
     
     # Yolo input ratio
-    ratio = 256
+    ratio = 357
     isObjectIn = False
     if len(yoloFrameData) != 0: # if yolo detect >= 1 object
         for obj in yoloFrameData:
             # print("my Object: ", obj)
             if float(obj[1]) >= 40: # Filter Class that it's confidence score < 0.6
                 if obj[0] not in testingClasses:
+                    continue
                     testingClasses.append(obj[0])
                     print("New object at frame name {}".format(obj[0]))
 
@@ -331,7 +333,7 @@ count = 0
 # Initialize MONAD
 # Create Training Feature Space
 Train_FS = list()
-trainingClasses = list()
+trainingClasses = ["person"]
 
 import json
 with open('result_train_ucsd.json', 'r') as f:
@@ -370,14 +372,13 @@ print("Train_FS_N: ", Train_FS_N.shape)
 
 # Create Testing Feature Space
 Test_FS = list()
-testingClasses = list()
-
+testingClasses = ['person', 'skateboard', 'bicycle', 'skis']
 
 import numpy.matlib
 errors = list()
 np.random.shuffle(Train_FS_N)
-Ng = 1000
-Mg = Train_FS_N.shape[0] - 1000
+Ng = 5000
+Mg = Train_FS_N.shape[0] - 5000
 
 X_N = Train_FS_N[0:Ng]
 X_M = Train_FS_N[Ng:-1]
@@ -401,18 +402,17 @@ plt.close()
 count = 4
 
 print("-"*40)
-# images = sorted(glob.glob("/content/Data/ped2/testing/frames/01/*.jpg"))
-images = sorted(glob.glob("/content/Data/test/*.jpg"))
+images = sorted(glob.glob("/content/test/ped2/testing/frames/02/*.jpg"))
+# images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
 psnr = None
-count = 0
 figData = [0]
 ind = 0
-for imageDir in images[600:1000]: # Apple Store stolen images[600:1000]
+for imageDir in images: # Apple Store stolen images[600:1000]
     prev_time = time.time()
     print("dir ", imageDir)
     # Run GAN to calc MSE
-    psnr = generatePSNR(imageDir, count)
+    psnr = generatePSNR(imageDir, ind)
 
     # Run yolo to detect object and export infos
     image, detections = image_detection(imageDir, 
@@ -430,7 +430,6 @@ for imageDir in images[600:1000]: # Apple Store stolen images[600:1000]
     frame_FS = createTestFS(detections, psnr)
     # print("Test FS: ", Test_FS[len(Test_FS) - 1])
     # print("Testing classes: ", testingClasses)
-    count += 1
     # Normalization
     # normalized_FS = normalizeTestFS(Test_FS[len(Test_FS) - 1], g_max, g_min)
     
@@ -445,7 +444,7 @@ for imageDir in images[600:1000]: # Apple Store stolen images[600:1000]
     for obj in normalized_FS:
         t.append(obj[0] + knndis(np.transpose(obj[1:]),np.transpose(Train_FS_N[Ng:-1, 1:])))
 
-    dis = (np.max(t)) - 0.8  # IDK what 0.8 means :(
+    dis = (np.max(t)) - 0.75  # IDK what 0.8 means :(
     # print("Test_FS Error: ", dis)
     figData.append(np.max((0,figData[ind] + dis)))
     
@@ -456,8 +455,8 @@ for imageDir in images[600:1000]: # Apple Store stolen images[600:1000]
                 if figData[ind-1] - figData[ind-2] <=0:
                     figData[ind+1] = 0
     ind += 1
-    if save_labels:
-        save_annotations(imageDir, image, detections, class_names)
+    # if save_labels:
+    #     save_annotations(imageDir, image, detections, class_names)
     fps = float(1/(time.time() - prev_time))
     print("FPS: {}".format(fps))
 
@@ -471,14 +470,43 @@ for id1 in range(0,len(idx)-6):
 for id2 in range(0,len(idx)-50):
     if idx[id2+50] - idx[id2] >= 54:
         figData[idx[id2]] = 0
-        
-for id1 in range(0,len(idx)-6):
-    if idx[id1+5] - idx[id1] >= 6:
-        figData[idx[id1]] = 0
 
-plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)))
-plt.savefig("/content/Test_FS_N 1.png")
-plt.close()
 
 #
 sess.close()
+
+
+sc = (figData-np.min(figData))/(np.max(figData)-np.min(figData))
+labels = np.load('labels.npy')
+
+test_label = labels[180:180 + len(sc)]
+plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)), label = "Detection")
+plt.plot(test_label, label = "GT")
+plt.legend()
+
+plt.savefig("/content/Test_FS_N 02 with GT.png")
+plt.close()
+
+import random
+
+
+
+
+
+from sklearn import metrics
+import scipy.io as scio
+
+
+print("len sc: ", len(sc))
+
+
+fpr2, tpr2, thresholds = metrics.roc_curve(test_label,sc ,1)
+plt.plot(fpr2, tpr2)
+plt.savefig("/content/auc.png")
+plt.close()
+# fpr2 = np.sort(np.append(fpr2,(0.45))) # We extrapolate a point so as to complete the ROC curve
+# tpr2 = np.sort(np.append(tpr2,(1)))
+
+print('ODIT AUC:', metrics.auc(fpr2, tpr2))
+
+print("auc: ", np.trapz(tpr2, fpr2))
