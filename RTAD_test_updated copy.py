@@ -80,7 +80,7 @@ def generatePSNR(frame, count):
     # video_clip = data_loader.get_video_clips(count, i - num_his, i + 1)
     video_clip = []
     # print("\n\nBATCH: ", batch)
-    # print("Batch size", len(batch))
+    print("Batch size", len(batch))
     if len(batch) < 4:
         image = np_load_frame(frame, resize_height=256, resize_width=256)
         batch.append(image)
@@ -94,14 +94,14 @@ def generatePSNR(frame, count):
         for i in range(5, len(batch)):
             batch.pop(0)
 
-    # print("\n\nBATCH: ", len(batch))
+    print("\n\nBATCH: ", len(batch))
     video_clip = np.concatenate(batch, axis=2)
-    # print("\n\nVideo Clip: ", video_clip.shape)
+    print("\n\nVideo Clip: ", video_clip.shape)
     # print("\n\nVideo Clip 2: ", video_clip[np.newaxis, ...])
     
     batch.pop(0)
     psnr = sess.run(test_psnr_error, feed_dict={test_video_clips_tensor: video_clip[np.newaxis, ...]})
-    # print("psnr: ", psnr)
+    print("psnr: ", psnr)
     sh = sess.run(test_outputs,
                       feed_dict={test_video_clips_tensor: video_clip[np.newaxis, ...]})
     # if not os.path.isdir("Train_Data/" + count):
@@ -112,7 +112,7 @@ def generatePSNR(frame, count):
     im2.save("Train_Data/" + str(count).zfill(6) + "_gt"+".jpg")
     print("count: {} psnr {}".format(count, psnr))
     
-    # print("PSNR : ", psnr)
+    print("PSNR : ", psnr)
     return psnr
 
 def image_detection(image_path, network, class_names, class_colors, thresh):
@@ -223,7 +223,7 @@ def createTestFS (yoloFrameData, psnrFrameError):
                 x = obj[2][0] # top left corner
                 h = obj[2][3] # height
                 w = obj[2][2] # width
-                # print("Class {} -  Score {} ".format(obj[0], obj[1]))
+                print("Class {} -  Score {} ".format(obj[0], obj[1]))
 
                 cx = x + w/2
                 cy = y + h/2
@@ -387,7 +387,7 @@ for i in range(Ng):
     
     e = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
     errors.append(e)
-    if i% 500 == 0:
+    if i% 50 == 0:
         print(i,e)
 
 Base_lm = np.sort(errors)[int(len(errors)*0.9)]
@@ -396,7 +396,7 @@ print("-"*40)
 print("Training Train_FS succesful!")
 print("Base_lm: ", Base_lm)
 
-plt.plot(np.sort(errors)[1:Ng])
+plt.plot(np.sort(errors)[1:999])
 plt.savefig("/content/Train_FS_N.png")
 plt.close()
 count = 4
@@ -405,17 +405,10 @@ print("-"*40)
 images = sorted(glob.glob("/content/test/ped2/testing/frames/02/*.jpg"))
 # images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
-
-# Export video output
-myImage = cv2.imread(images[0])
-myHeight, myWidth, _ = myImage.shape
-
-resultVid = cv2.VideoWriter('/content/test/output/vid/out.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
-
 psnr = None
 figData = [0]
 ind = 0
-for imageDir in images[:35]: # Apple Store stolen images[600:1000]
+for imageDir in images: # Apple Store stolen images[600:1000]
     prev_time = time.time()
     print("dir ", imageDir)
     # Run GAN to calc MSE
@@ -454,22 +447,8 @@ for imageDir in images[:35]: # Apple Store stolen images[600:1000]
     dis = (np.max(t)) - 0.75  # IDK what 0.8 means :(
     # print("Test_FS Error: ", dis)
     figData.append(np.max((0,figData[ind] + dis)))
-
-    rgb_red = [0, 0, 255]
-    rgb_green = [60, 179, 0]
-
-    thickness=60*image.shape[0]//600
-    starting_point  = (-10, thickness//2)
-    ending_point  = (image.shape[1]+10, image.shape[0]+10)
-    color=rgb_red
-    cv2.rectangle(image, starting_point, ending_point, color, thickness)
-
-
-    image = cv2.imread(imageDir)
-    cv2.imwrite("/content/test/output/{}.jpg".format(ind), image)
-    resultVid.write(image)
     
-    
+
     if ind > 5:
         if figData[ind+1] - figData[ind] <=0:
             if figData[ind] - figData[ind-1] <=0:
@@ -481,7 +460,6 @@ for imageDir in images[:35]: # Apple Store stolen images[600:1000]
     fps = float(1/(time.time() - prev_time))
     print("FPS: {}".format(fps))
 
-resultVid.release()
 
 figData.pop(0)
 idx = np.where(np.array(figData)>0)[0]
