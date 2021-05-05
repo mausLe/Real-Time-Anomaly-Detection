@@ -414,7 +414,7 @@ plt.close()
 count = 4
 
 print("-"*40)
-images = sorted(glob.glob("/content/test/ped2/testing/frames/01/*.jpg"))
+images = sorted(glob.glob("/content/test/ped2/testing/frames/12/*.jpg"))
 # images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
 
@@ -422,7 +422,7 @@ images = sorted(glob.glob("/content/test/ped2/testing/frames/01/*.jpg"))
 myImage = cv2.imread(images[0])
 myHeight, myWidth, _ = myImage.shape
 
-resultVid = cv2.VideoWriter('/content/output/vid/out.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
+resultVid = cv2.VideoWriter('/content/output/vid/out12.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
 
 psnr = None
 figData = [0]
@@ -544,34 +544,35 @@ sess.close()
 sc = (figData-np.min(figData))/(np.max(figData)-np.min(figData))
 labels = np.load('labels.npy')
 
-test_label = labels[:len(sc)]
+test_label = labels[-len(sc)]
 plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)), label = "Detection")
 plt.plot(test_label, label = "GT")
 plt.legend()
 
-plt.savefig("/content/Test_FS_N 01 with GT.png")
+plt.savefig("/content/Test_FS_N 12 with GT.png")
 plt.close()
 
 import random
 
 
-
+sc = np.array(sc)
 
 
 from sklearn import metrics
 import scipy.io as scio
 
+sc = np.where(sc > 0, 1, 0)
 
-print("len sc: ", sc)
+print("score: ", sc)
+print("test_label: ", test_label)
 
 
-fpr2, tpr2, thresholds = metrics.roc_curve(test_label,sc ,1)
-plt.plot(fpr2, tpr2)
-plt.savefig("/content/auc.png")
-plt.close()
+fpr2, tpr2, thresholds = metrics.roc_curve(test_label, sc ,1)
 # fpr2 = np.sort(np.append(fpr2,(0.45))) # We extrapolate a point so as to complete the ROC curve
 # tpr2 = np.sort(np.append(tpr2,(1)))
-
+plt.plot(fpr2, tpr2)
+plt.savefig("/content/AUC Ped2 test frame 033 ODIT score - .png")
+plt.close()
 print('ODIT AUC:', metrics.auc(fpr2, tpr2))
 
 print("auc: ", np.trapz(tpr2, fpr2))
