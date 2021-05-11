@@ -193,6 +193,17 @@ with tf.Session(config=config) as sess:
                 _dis_loss = 0
 
             print('Training generator...')
+            print("\ng_train_op: ", g_train_op)
+            print("\ng_lrate: ", g_lrate)
+            print("\ng_step: ", g_step) 
+            print("\nlp_loss: ", lp_loss) 
+            print("\ngdl_loss: ", gdl_loss) 
+            print("\nadv_loss: ", adv_loss) 
+            print("\nflow_loss: ", flow_loss) 
+            print("\ng_loss: ", g_loss) 
+            print("\ntrain_psnr_error: ", train_psnr_error) 
+            print("\nsummary_op: ", summary_op)
+
             _, _g_lr, _step, _lp_loss, _gdl_loss, _adv_loss, _flow_loss, _g_loss, _train_psnr, _summaries = sess.run(
                 [g_train_op, g_lrate, g_step, lp_loss, gdl_loss, adv_loss, flow_loss, g_loss, train_psnr_error, summary_op])
 
