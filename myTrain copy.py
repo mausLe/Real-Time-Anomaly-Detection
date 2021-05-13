@@ -286,9 +286,9 @@ for imageDir in images: # Apple Store stolen images[600:1000]
     image, detections = image_detection(imageDir, 
     network, class_names, class_colors, thresh)
 
-    print("\n", ind, detections)
+    # print("\n", ind, detections)
     
-    cv2.imwrite("/content/output/{}.jpg".format(ind), image)
+    # cv2.imwrite("/content/output/{}.jpg".format(ind), image)
 
     # image.save("/content/test/yolo_output/" + str(count).zfill(6) + ".jpg")
     # print("detection: ", detections)
@@ -321,7 +321,7 @@ for i in range(0,4):
 for i in range(1,4):                            
     Train_FS_N[:,i] = 0.2*(Train_FS_N[:,i])
     
-for i in range(4,5):                            
+for i in range(4, 10):                            
     Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
 
 """
@@ -374,19 +374,34 @@ def count(indx):
     start = 0 
     for i in range(len(totalFrame)):
         for j in range(len(totalFrame[i])):
+            if start == indx:
+              print("\nframe {} - val {}".format(start - 1, totalFrame[i-1]))
+              print("frame {} - val {}".format(start, totalFrame[i]))
+              print("frame {} - val {}".format(start + 1, totalFrame[i+1]))
+
+              return start
+
             start +=1
     
-    return indx
 
+    return start
 
-for i in range(Ng):
-    e = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
-    errors.append(e)
+try:
+  for i in range(Ng):
+      e = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
+      errors.append(e)
 
-    # print(i,e)
-    if e > 1:
-        cnt = count(i)
-        print("\nFrame {} - error {}".format(cnt, e))
+      # print(i,e)
+      if e > 1:
+          # cnt = count(i)
+          # print("\nFrame {} - error {}".format(cnt, e))
+          print("\nFrame {} - error {}".format(i-1, X_N[i-1]))
+          print("Frame {} - error {}".format(i, X_N[i]))
+          print("Frame {} - error {}".format(i+1, X_N[i+1]))
+
+          print(i,e)
+except:
+  pass 
 
 f = open("myErrors.txt", "a")
 f.write(str(errors))
