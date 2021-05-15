@@ -112,7 +112,7 @@ def generatePSNR(frame, count):
     im2.save("Train_Data/" + str(count).zfill(6) + "_gt"+".jpg")
     # print("count: {} psnr {}".format(count, psnr))
     
-    print("PSNR : ", psnr)
+    # print("PSNR : ", psnr)
     return psnr
 
 def image_detection(image_path, network, class_names, class_colors, thresh):
@@ -173,9 +173,9 @@ def createNewTrainFS (yoloFrameData, psnrFrameError, ind):
             if float(obj[1]) >= 60: # Filter Class that it's confidence score < 0.6
                 myObject.append(obj)
                 if obj[0] not in trainingClasses:
-                    # continue
-                    trainingClasses.append(obj[0])
-                    print("New object at frame name {}".format(obj[0]))
+                    continue
+                    # trainingClasses.append(obj[0])
+                    # print("New object at frame name {}".format(obj[0]))
 
                 
                 y = obj[2][1]  # top left corner
