@@ -71,8 +71,6 @@ def np_load_frame(filename, resize_height, resize_width):
     image_resized = (image_resized / 127.5) - 1.0
     return image_resized
 
-
-
 def generatePSNR(frame, count):
     # print("\n\n" + "-"*40)
     # length = video['length']
@@ -152,6 +150,58 @@ def save_annotations(name, image, detections, class_names):
             label = class_names.index(label)
             f.write("{} {:.4f} {:.4f} {:.4f} {:.4f} {:.4f}\n".format(label, x, y, w, h, float(confidence)))
 
+def createNewTrainFS (yoloFrameData, psnrFrameError):
+    """
+    yoloFrameData :
+    psnrFrameError : 
+    """
+    global Train_FS, trainingClasses
+    myFrame = []
+
+    mse = 1/psnrFrameError
+
+    # Yolo input ratio
+    ratio = 357
+    isObjectIn = False
+    if len(yoloFrameData) != 0: # if yolo detect >= 1 object
+        for obj in yoloFrameData:
+            # print("my Object: ", obj)
+            if float(obj[1]) >= 60: # Filter Class that it's confidence score < 0.6
+                if obj[0] not in trainingClasses:
+                    continue
+                    # trainingClasses.append(obj[0])
+                    # print("New object at frame name {}".format(obj[0]))
+
+                
+                y = obj[2][1]  # top left corner
+                x = obj[2][0] # top left corner
+                h = obj[2][3] # height
+                w = obj[2][2] # width
+                # print("Class {} -  Score {} ".format(obj[0], obj[1]))
+
+                x = x*256//608
+                y = y*256//608
+                h = h*256//608
+                w = w*256//608
+                
+                cx = x + w/2
+                cy = y + h/2
+                area = w*h
+
+                probs = np.zeros((1,15))
+                probs[0,trainingClasses.index(obj[0])] = float(obj[1])
+                fs = [mse,cx,cy,area] + list(probs[0,:])
+                Train_FS.append(fs)
+                # myFrame.append(fs)
+                
+                isObjectIn = True
+
+    if isObjectIn == False:
+        cx = cy = area = 0
+        probs = np.zeros((1,15))
+        fs = [mse,cx,cy,area] + list(probs[0,:])
+        Train_FS.append(fs)
+        # myFrame.append(fs)
 
 def createTrainFS (yoloData, psnrError):
     global Train_FS, trainingClasses
@@ -338,14 +388,66 @@ network, class_names, class_colors = darknet.load_network(
 )
 
 
-count = 0
+count = 4
 # print("Images: ", images)
 
 # Initialize MONAD
 # Create Training Feature Space
+
+print("\nStart creating Train_FS")
 Train_FS = list()
 trainingClasses = ["person"]
 
+trainDir = sorted(glob.glob("/content/test/ped2/training/frames/01/*.jpg"))
+
+# Export video output
+myImage = cv2.imread(trainDir[0])
+myHeight, myWidth, _ = myImage.shape
+
+psnr = None
+
+for dir in trainDir:
+    prev_time = time.time()
+    # print("dir ", imageDir)
+    # Run GAN to calc MSE
+    psnr = generatePSNR(dir, count)
+   
+
+    # Run yolo to detect object and export infos
+    image, detections = image_detection(dir, 
+    network, class_names, class_colors, thresh)
+
+    if psnr is None:
+        fps = int(1/(time.time() - prev_time))
+        print("FPS: {}".format(fps))
+        continue
+
+    createNewTrainFS(detections, psnr)
+    count += 1
+    
+
+print("\nFinish creating Train_FS")
+Train_FS = np.array(Train_FS)
+print("Train_FS shape: ", Train_FS.shape)
+print("Training classes: ", trainingClasses)
+
+g_min = np.min(Train_FS,0)
+g_max = np.max(Train_FS,0)
+print("g_max: ", g_max)
+print("g_min: ", g_min)
+
+# Normalize Train_FS
+Train_FS_N = Train_FS*1
+for i in range(0,4):
+    Train_FS_N[:,i] = (Train_FS[:,i] - g_min[i])/(g_max[i]-g_min[i])
+
+for i in range(1,4):                            
+    Train_FS_N[:,i] = 0.2*(Train_FS_N[:,i])
+    
+for i in range(4, 18):                            
+    Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
+
+"""
 import json
 with open('result_train_ucsd.json', 'r') as f:
     D = json.load(f)
@@ -371,32 +473,28 @@ g_min = np.min(Train_FS,0)
 g_max = np.max(Train_FS,0)
 print("g_max: ", g_max)
 print("g_min: ", g_min)
+"""
 
 # Normalize Feature Space
 # Check the w1, w2, w3 on the paper
 # But these number quite different from what on KevalDoshi notebook :/ 
+"""
 Train_FS_N = normalizeTrainFS(g_max, g_min) 
 print("Train_FS_N[250]: ", Train_FS_N[250])
-
+"""
 np.random.shuffle(Train_FS_N)
 print("Train_FS_N: ", Train_FS_N.shape)
-
-# Create Testing Feature Space
-Test_FS = list()
-testingClasses = ['person', 'skateboard', 'bicycle', 'skis']
-
 
 import numpy.matlib
 errors = list()
 np.random.shuffle(Train_FS_N)
-Ng = 5000
-Mg = Train_FS_N.shape[0] - 5000
+Ng = Train_FS_N.shape[0] // 3*2
+Mg = Train_FS_N.shape[0] - Ng
 
 X_N = Train_FS_N[0:Ng]
 X_M = Train_FS_N[Ng:-1]
 
 for i in range(Ng):
-    
     e = (X_N[i,0]) + knndis_tr(np.transpose(X_N[i,1:-1]),np.transpose(X_M[:,1:-1]))
     errors.append(e)
     if i% 500 == 0:
@@ -405,24 +503,28 @@ for i in range(Ng):
 Base_lm = np.sort(errors)[int(len(errors)*0.9)]
 
 print("-"*40)
-print("Training Train_FS succesful!")
+print("Train Train_FS succesful!")
 print("Base_lm: ", Base_lm)
 
 plt.plot(np.sort(errors)[1:Ng])
 plt.savefig("/content/Train_FS_N.png")
 plt.close()
-count = 4
 
 print("-"*40)
-images = sorted(glob.glob("/content/test/ped2/testing/frames/04/*.jpg"))
+images = sorted(glob.glob("/content/test/ped2/testing/frames/01/*.jpg"))
 # images = sorted(glob.glob("/content/Data/test/*.jpg"))
+
+
+# Create Testing Feature Space
+Test_FS = list()
+testingClasses = ['person']
 
 
 # Export video output
 myImage = cv2.imread(images[0])
 myHeight, myWidth, _ = myImage.shape
 
-resultVid = cv2.VideoWriter('/content/output/vid/out04.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
+resultVid = cv2.VideoWriter('/content/output/vid/out01.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
 
 psnr = None
 figData = [0]
@@ -432,6 +534,7 @@ for imageDir in images: # Apple Store stolen images[600:1000]
     # print("dir ", imageDir)
     # Run GAN to calc MSE
     psnr = generatePSNR(imageDir, ind)
+    
 
     # Run yolo to detect object and export infos
     image, detections = image_detection(imageDir, 
@@ -508,20 +611,14 @@ for imageDir in images: # Apple Store stolen images[600:1000]
 
 
     cv2.rectangle(image, (0, 0), ending_point, color, thickness)
-
-
-    
-    
     resultVid.write(image)
     
-    
-
-    ind += 1
     # if save_labels:
     #     save_annotations(imageDir, image, detections, class_names)
     fps = float(1/(time.time() - prev_time))
     # print("Image size: ", image.shape)
-    # print("FPS: {}".format(fps))
+    print("FPS: {}".format(fps))
+    ind += 1
 
 print("\n\nind: ", ind)
 resultVid.release()
@@ -536,19 +633,17 @@ for id2 in range(0,len(idx)-50):
     if idx[id2+50] - idx[id2] >= 54:
         figData[idx[id2]] = 0
 
-
-#
 sess.close()
 
 
 sc = (figData-np.min(figData))/(np.max(figData)-np.min(figData))
 labels = np.load('labels.npy')
-test_label = labels[170*2 + 150:170*2 + 150+180]
+test_label = labels[:180]
 plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)), label = "Detection")
 plt.plot(test_label, label = "GT")
 plt.legend()
 
-plt.savefig("/content/Test_FS_N 04 with GT.png")
+plt.savefig("/content/Test_FS_N 01 with GT.png")
 plt.close()
 
 import random
@@ -570,7 +665,7 @@ fpr2, tpr2, thresholds = metrics.roc_curve(test_label, sc ,1)
 # fpr2 = np.sort(np.append(fpr2,(0.45))) # We extrapolate a point so as to complete the ROC curve
 # tpr2 = np.sort(np.append(tpr2,(1)))
 plt.plot(fpr2, tpr2)
-plt.savefig("/content/AUC Ped2 test frame 04 ODIT score - .png")
+plt.savefig("/content/AUC Ped2 test frame 01 ODIT score - .png")
 plt.close()
 print('ODIT AUC:', metrics.auc(fpr2, tpr2))
 
