@@ -71,6 +71,58 @@ def np_load_frame(filename, resize_height, resize_width):
     image_resized = (image_resized / 127.5) - 1.0
     return image_resized
 
+def new_generatePSNR(frame, count):
+    # print("\n\n" + "-"*40)
+    # length = video['length']
+    # print("\nNum_his {}, length {}".format(num_his, length))
+    # video_clip = data_loader.get_video_clips(count, i - num_his, i + 1)
+    video_clip = []
+
+    
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # print("\n\nBATCH: ", batch)
+    # print("Batch size", len(batch))
+    if len(batch) < 4:
+        image = cv2.resize(frame, (256, 256),
+                               interpolation=cv2.INTER_LINEAR)
+        image_resized = image.astype(dtype=np.float32)
+        image_resized = (image_resized / 127.5) - 1.0
+        
+        batch.append(image_resized)
+        return None
+    elif len(batch) == 4:
+        image = cv2.resize(frame, (256, 256),
+                               interpolation=cv2.INTER_LINEAR)
+        image_resized = image.astype(dtype=np.float32)
+        image_resized = (image_resized / 127.5) - 1.0
+        batch.append(image_resized)
+    elif len(batch) == 5:
+        pass
+    else:
+        for i in range(5, len(batch)):
+            batch.pop(0)
+
+    # print("\n\nBATCH: ", len(batch))
+    video_clip = np.concatenate(batch, axis=2)
+    # print("\n\nVideo Clip: ", video_clip.shape)
+    # print("\n\nVideo Clip 2: ", video_clip[np.newaxis, ...])
+    
+    batch.pop(0)
+    psnr = sess.run(test_psnr_error, feed_dict={test_video_clips_tensor: video_clip[np.newaxis, ...]})
+    # print("psnr: ", psnr)
+    sh = sess.run(test_outputs,
+                      feed_dict={test_video_clips_tensor: video_clip[np.newaxis, ...]})
+    # if not os.path.isdir("Train_Data/" + count):
+    #     os.mkdir("Train_Data/" + count)
+    im = Image.fromarray((sh[0,:,:,:]*255).astype(np.uint8))
+    im.save("Train_Data/" + str(count).zfill(6) + ".jpg")
+    im2 = Image.fromarray((video_clip[...,-3:]*255).astype(np.uint8))
+    im2.save("Train_Data/" + str(count).zfill(6) + "_gt"+".jpg")
+    # print("count: {} psnr {}".format(count, psnr))
+    
+    print("PSNR : ", psnr)
+    return psnr
+
 def generatePSNR(frame, count):
     # print("\n\n" + "-"*40)
     # length = video['length']
@@ -120,6 +172,24 @@ def image_detection(image_path, network, class_names, class_colors, thresh):
     height = darknet.network_height(network)
     darknet_image = darknet.make_image(width, height, 3)
     image = cv2.imread(image_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image_resized = cv2.resize(image_rgb, (width, height),
+                               interpolation=cv2.INTER_LINEAR)
+
+    darknet.copy_image_from_bytes(darknet_image, image_resized.tobytes())
+    
+    detections = darknet.detect_image(network, class_names, darknet_image, thresh=thresh)
+    darknet.free_image(darknet_image)
+    image = darknet.draw_boxes(detections, image_resized, class_colors)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB), detections
+
+def new_image_detection(image, network, class_names, class_colors, thresh):
+    # Darknet doesn't accept numpy images.
+    # Create one with image we reuse for each detect
+    width = darknet.network_width(network)
+    height = darknet.network_height(network)
+    darknet_image = darknet.make_image(width, height, 3)
+    # image = cv2.imread(image_path)
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image_resized = cv2.resize(image_rgb, (width, height),
                                interpolation=cv2.INTER_LINEAR)
@@ -214,7 +284,7 @@ def createTrainFS (yoloData, psnrError):
 
         if len(yoloData[i]) != 0: # if yolo detect >= 1 object
             for obj in yoloData[i]:
-                if obj['confidence'] >= 0.6: # Filter Class that it's confidence score < 0.6
+                if obj['confidence'] >= 0.8: # Filter Class that it's confidence score < 0.6
                     if obj['name'] not in trainingClasses:
                         continue
                         trainingClasses.append(obj['name'])
@@ -268,11 +338,11 @@ def createTestFS (yoloFrameData, psnrFrameError):
     if len(yoloFrameData) != 0: # if yolo detect >= 1 object
         for obj in yoloFrameData:
             # print("my Object: ", obj)
-            if float(obj[1]) >= 45: # Filter Class that it's confidence score < 0.6
+            if float(obj[1]) >= 80: # Filter Class that it's confidence score < 0.6
                 if obj[0] not in testingClasses:
-                    # continue
-                    testingClasses.append(obj[0])
-                    print("New object at frame name {}".format(obj[0]))
+                    continue
+                    # testingClasses.append(obj[0])
+                    # print("New object at frame name {}".format(obj[0]))
 
                 
                 y = obj[2][1]  # top left corner
@@ -398,7 +468,9 @@ print("\nStart creating Train_FS")
 Train_FS = list()
 trainingClasses = ["person"]
 
-trainDir = sorted(glob.glob("/content/test/ped2/training/frames/01/*.jpg"))
+# trainDir = sorted(glob.glob("/content/test/ped2/training/frames/01/*.jpg"))
+# trainDir = sorted(glob.glob("/content/Data/0/*.jpg"))
+
 
 # Export video output
 myImage = cv2.imread(trainDir[0])
@@ -406,6 +478,43 @@ myHeight, myWidth, _ = myImage.shape
 
 psnr = None
 
+import cv2
+
+# Opens the Video file
+# cap= cv2.VideoCapture('/content/input/0_2.mp4')
+cap= cv2.VideoCapture('/content/input/0_1.mp4')
+
+while(cap.isOpened()):
+    ret, frame = cap.read()
+    if ret == False:
+        break
+    
+    prev_time = time.time()
+    # print("dir ", imageDir)
+    # Run GAN to calc MSE
+    psnr = new_generatePSNR(frame, count)
+   
+
+    # Run yolo to detect object and export infos
+    image, detections = new_image_detection(frame, 
+    network, class_names, class_colors, thresh)
+
+    if count % 50 == 0:
+        fps = int(1/(time.time() - prev_time))
+        # print("FPS: {}".format(fps))
+        print("count {} - FPS {}".format(count, fps))
+
+    if psnr is None:
+        fps = int(1/(time.time() - prev_time))
+        print("FPS: {}".format(fps))
+        continue
+
+    createNewTrainFS(detections, psnr)
+    count += 1
+
+cap.release()
+
+"""
 for dir in trainDir:
     prev_time = time.time()
     # print("dir ", imageDir)
@@ -417,6 +526,11 @@ for dir in trainDir:
     image, detections = image_detection(dir, 
     network, class_names, class_colors, thresh)
 
+    if count %50 == 0:
+        fps = int(1/(time.time() - prev_time))
+        # print("FPS: {}".format(fps))
+        print("count {} - FPS {}".format(count, fps))
+
     if psnr is None:
         fps = int(1/(time.time() - prev_time))
         print("FPS: {}".format(fps))
@@ -424,7 +538,7 @@ for dir in trainDir:
 
     createNewTrainFS(detections, psnr)
     count += 1
-    
+"""
 
 print("\nFinish creating Train_FS")
 Train_FS = np.array(Train_FS)
@@ -511,7 +625,7 @@ plt.savefig("/content/Train_FS_N.png")
 plt.close()
 
 print("-"*40)
-images = sorted(glob.glob("/content/test/ped2/testing/frames/01/*.jpg"))
+images = sorted(glob.glob("/content/Data/1_4/*.jpg"))
 # images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
 
@@ -519,12 +633,16 @@ images = sorted(glob.glob("/content/test/ped2/testing/frames/01/*.jpg"))
 Test_FS = list()
 testingClasses = ['person']
 
+# testing batch now is null
+# Recreate it
+batch = []
+
 
 # Export video output
 myImage = cv2.imread(images[0])
 myHeight, myWidth, _ = myImage.shape
 
-resultVid = cv2.VideoWriter('/content/output/vid/out01.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
+resultVid = cv2.VideoWriter('/content/output/vid/B2DL_test.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
 
 psnr = None
 figData = [0]
@@ -549,6 +667,7 @@ for imageDir in images: # Apple Store stolen images[600:1000]
     if psnr is None:
         fps = int(1/(time.time() - prev_time))
         print("FPS: {}".format(fps))
+        print("figData len: ", len(figData))
         continue
 
     frame_FS = createTestFS(detections, psnr)
@@ -573,6 +692,8 @@ for imageDir in images: # Apple Store stolen images[600:1000]
     dis = (np.max(t)) - 0.75  # IDK what 0.8 means :(
     # print("Test_FS Error: ", dis)
     figData.append(np.max((0,figData[ind] + dis)))
+
+
     
     if ind > 64 and ind < 70:
 
@@ -615,9 +736,12 @@ for imageDir in images: # Apple Store stolen images[600:1000]
     
     # if save_labels:
     #     save_annotations(imageDir, image, detections, class_names)
-    fps = float(1/(time.time() - prev_time))
+    
     # print("Image size: ", image.shape)
-    print("FPS: {}".format(fps))
+    # print("FPS: {}".format(fps))
+    if ind % 50 == 0:
+        fps = float(1/(time.time() - prev_time))
+        print("index {} - fps {}".format(ind, fps))
     ind += 1
 
 print("\n\nind: ", ind)
@@ -638,12 +762,15 @@ sess.close()
 
 sc = (figData-np.min(figData))/(np.max(figData)-np.min(figData))
 labels = np.load('labels.npy')
-test_label = labels[:180]
+print("Len of label: ", len(labels))
+test_label = labels[:176]
 plt.plot((figData-np.min(figData))/(np.max(figData)-np.min(figData)), label = "Detection")
 plt.plot(test_label, label = "GT")
 plt.legend()
 
-plt.savefig("/content/Test_FS_N 01 with GT.png")
+# plt.savefig("/content/Test_FS_N 01 with GT training with only frame 1.png")
+plt.savefig("/content/Test_FS_N B2DL_test.png")
+
 plt.close()
 
 import random
@@ -658,14 +785,28 @@ import scipy.io as scio
 sc = np.where(sc > 0, 1, 0)
 
 print("score: ", sc)
-print("test_label: ", test_label)
+print("label: ", test_label)
+
+for i in range(len(sc)):
+  if sc[i] == 1:
+    print("test: ", i)
+    break
+
+for i in range(len(test_label)):
+  if test_label[i] == 1:
+    print("label: ", i)
+    break
 
 
 fpr2, tpr2, thresholds = metrics.roc_curve(test_label, sc ,1)
 # fpr2 = np.sort(np.append(fpr2,(0.45))) # We extrapolate a point so as to complete the ROC curve
 # tpr2 = np.sort(np.append(tpr2,(1)))
 plt.plot(fpr2, tpr2)
-plt.savefig("/content/AUC Ped2 test frame 01 ODIT score - .png")
+
+# plt.savefig("/content/AUC Ped2 test frame 01 ODIT score - training with only frame 1.png")
+plt.savefig("/content/AUC B2DL_test.png")
+
+
 plt.close()
 print('ODIT AUC:', metrics.auc(fpr2, tpr2))
 
