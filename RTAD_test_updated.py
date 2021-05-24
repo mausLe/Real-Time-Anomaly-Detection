@@ -469,8 +469,7 @@ Train_FS = list()
 trainingClasses = ["person"]
 
 # trainDir = sorted(glob.glob("/content/test/ped2/training/frames/01/*.jpg"))
-# trainDir = sorted(glob.glob("/content/Data/0/*.jpg"))
-
+trainDir = sorted(glob.glob("/content/Data/0/*.jpg"))
 
 # Export video output
 myImage = cv2.imread(trainDir[0])
@@ -647,6 +646,93 @@ resultVid = cv2.VideoWriter('/content/output/vid/B2DL_test.avi', fourcc=cv2.Vide
 psnr = None
 figData = [0]
 ind = 0
+
+cap= cv2.VideoCapture('/content/input/1_4.mp4')
+
+while(cap.isOpened()):
+    ret, frame = cap.read()
+    if ret == False:
+        break
+    
+    prev_time = time.time()
+    # print("dir ", imageDir)
+    # Run GAN to calc MSE
+    psnr = new_generatePSNR(frame, ind)
+
+    # Run yolo to detect object and export infos
+    image, detections = new_image_detection(frame, 
+    network, class_names, class_colors, thresh)
+
+    if ind > 64 and ind < 70:
+        cv2.imwrite("/content/output/{}.jpg".format(ind), image)
+    
+    if psnr is None:
+        fps = int(1/(time.time() - prev_time))
+        print("FPS: {}".format(fps))
+        print("figData len: ", len(figData))
+        continue
+
+    frame_FS = createTestFS(detections, psnr)
+    t = list()
+    normalized_FS = normalizeTestFS(frame_FS, g_max, g_min)
+    for obj in normalized_FS:
+        t.append(obj[0] + knndis(np.transpose(obj[1:]),np.transpose(Train_FS_N[Ng:-1, 1:])))
+
+    dis = (np.max(t)) - 0.75  # IDK what 0.8 means :(
+    # print("Test_FS Error: ", dis)
+    figData.append(np.max((0,figData[ind] + dis)))
+
+    
+    if ind > 64 and ind < 70:
+
+        print("\n\nframe_FS {}: ".format(ind+1))
+        for fr in frame_FS:
+          print(fr)
+
+        print("\nDetection: ")
+        for det in detections:
+          if float(det[1]) > 40:
+              print(det)
+        print("\nfigData[{}] before: ".format(ind+1), figData[ind+1])
+
+        # print("figData[{}] before: ".format(ind+1), figData[ind+1])
+
+
+    if ind > 5:
+        if figData[ind+1] - figData[ind] <=0:
+            if figData[ind] - figData[ind-1] <=0:
+                if figData[ind-1] - figData[ind-2] <=0:
+                    figData[ind+1] = 0
+
+    rgb_red = [0, 0, 255]
+    color = rgb_green = [60, 179, 0]
+
+    thickness=40*frame.shape[0]//600
+    starting_point  = (0, 0)
+    ending_point  = (frame.shape[1], frame.shape[0])
+    # if images.index(imageDir) > 65 and images.index(imageDir) < 69:
+    if ind > 64 and ind < 70:
+        print("figData[{}] after: ".format(ind+1), figData[ind+1])
+    if figData[ind+1] > 0.8:
+        color = rgb_red
+
+
+    cv2.rectangle(frame, (0, 0), ending_point, color, thickness)
+    resultVid.write(frame)
+    
+    # if save_labels:
+    #     save_annotations(imageDir, image, detections, class_names)
+    
+    # print("Image size: ", image.shape)
+    # print("FPS: {}".format(fps))
+    if ind % 50 == 0:
+        fps = float(1/(time.time() - prev_time))
+        print("index {} - fps {}".format(ind, fps))
+    ind += 1
+
+cap.release()
+
+"""
 for imageDir in images: # Apple Store stolen images[600:1000]
     prev_time = time.time()
     # print("dir ", imageDir)
@@ -743,6 +829,7 @@ for imageDir in images: # Apple Store stolen images[600:1000]
         fps = float(1/(time.time() - prev_time))
         print("index {} - fps {}".format(ind, fps))
     ind += 1
+"""
 
 print("\n\nind: ", ind)
 resultVid.release()
