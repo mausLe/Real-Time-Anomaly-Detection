@@ -79,7 +79,7 @@ def new_generatePSNR(frame, count):
     video_clip = []
 
     
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     # print("\n\nBATCH: ", batch)
     # print("Batch size", len(batch))
     if len(batch) < 4:
@@ -110,17 +110,18 @@ def new_generatePSNR(frame, count):
     batch.pop(0)
     psnr = sess.run(test_psnr_error, feed_dict={test_video_clips_tensor: video_clip[np.newaxis, ...]})
     # print("psnr: ", psnr)
+    """
     sh = sess.run(test_outputs,
                       feed_dict={test_video_clips_tensor: video_clip[np.newaxis, ...]})
     # if not os.path.isdir("Train_Data/" + count):
     #     os.mkdir("Train_Data/" + count)
     im = Image.fromarray((sh[0,:,:,:]*255).astype(np.uint8))
-    im.save("Train_Data/" + str(count).zfill(6) + ".jpg")
+    # im.save("Train_Data/" + str(count).zfill(6) + ".jpg")
     im2 = Image.fromarray((video_clip[...,-3:]*255).astype(np.uint8))
-    im2.save("Train_Data/" + str(count).zfill(6) + "_gt"+".jpg")
+    # im2.save("Train_Data/" + str(count).zfill(6) + "_gt"+".jpg")
     # print("count: {} psnr {}".format(count, psnr))
-    
-    print("PSNR : ", psnr)
+    """
+    # print("PSNR : ", psnr)
     return psnr
 
 def generatePSNR(frame, count):
@@ -235,12 +236,16 @@ def createNewTrainFS (yoloFrameData, psnrFrameError):
     isObjectIn = False
     if len(yoloFrameData) != 0: # if yolo detect >= 1 object
         for obj in yoloFrameData:
-            # print("my Object: ", obj)
-            if float(obj[1]) >= 60: # Filter Class that it's confidence score < 0.6
+            if obj[0] not in not_spam:
+              continue
+
+            if float(obj[1]) >= 80: # Filter Class that it's confidence score < 0.6
+                # print("my Object: ", obj)
+                
                 if obj[0] not in trainingClasses:
-                    continue
-                    # trainingClasses.append(obj[0])
-                    # print("New object at frame name {}".format(obj[0]))
+                    # continue
+                    trainingClasses.append(obj[0])
+                    print("New object at frame name {}".format(obj[0]))
 
                 
                 y = obj[2][1]  # top left corner
@@ -273,51 +278,6 @@ def createNewTrainFS (yoloFrameData, psnrFrameError):
         Train_FS.append(fs)
         # myFrame.append(fs)
 
-def createTrainFS (yoloData, psnrError):
-    global Train_FS, trainingClasses
-        
-    # YOlo input ratio
-    ratio = 256
-    for i in range (4, len(yoloData)): # Pass the first 4 images
-        mse =  1/psnrError[i] # Image frame error
-        isObjectIn = False
-
-        if len(yoloData[i]) != 0: # if yolo detect >= 1 object
-            for obj in yoloData[i]:
-                if obj['confidence'] >= 0.8: # Filter Class that it's confidence score < 0.6
-                    if obj['name'] not in trainingClasses:
-                        continue
-                        trainingClasses.append(obj['name'])
-                        print("New object at frame {} name {}".format(i, obj['name']))
-
-                    # Filter outline objects
-                    
-                    
-                    y = obj['relative_coordinates']['center_y']*ratio  # top left corner
-                    x = obj['relative_coordinates']['center_x']*ratio # top left corner
-                    h = obj['relative_coordinates']['height']*ratio # height
-                    w = obj['relative_coordinates']['width']*ratio # width
-
-                    cx = x + w/2
-                    cy = y + h/2
-                    area = w*h
-
-                    probs = np.zeros((1,15))
-                    probs[0,trainingClasses.index(obj['name'])] = obj['confidence']
-                    fs = [mse,cx,cy,area] + list(probs[0,:])
-                    Train_FS.append(fs)
-
-                    isObjectIn = True
-
-        if isObjectIn == False:
-            cx = cy = area = 0
-            probs = np.zeros((1,15))
-            fs = [mse,cx,cy,area] + list(probs[0,:])
-            Train_FS.append(fs)
-
-    # return Train_FS
-
-
 def createTestFS (yoloFrameData, psnrFrameError):
     """
     yoloFrameData :
@@ -337,12 +297,14 @@ def createTestFS (yoloFrameData, psnrFrameError):
     isObjectIn = False
     if len(yoloFrameData) != 0: # if yolo detect >= 1 object
         for obj in yoloFrameData:
-            # print("my Object: ", obj)
-            if float(obj[1]) >= 80: # Filter Class that it's confidence score < 0.6
+            if obj[0] not in not_spam:
+              continue
+            if float(obj[1]) >= 60: # Filter Class that it's confidence score < 0.6
+                # print("my Object: ", obj)
                 if obj[0] not in testingClasses:
-                    continue
-                    # testingClasses.append(obj[0])
-                    # print("New object at frame name {}".format(obj[0]))
+                    # continue
+                    testingClasses.append(obj[0])
+                    print("New object at frame name {}".format(obj[0]))
 
                 
                 y = obj[2][1]  # top left corner
@@ -387,6 +349,9 @@ def normalizeTrainFS(g_max, g_min):
 
     for i in range(4,5):                            
         Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
+
+    for i in range(5,18):                            
+        Train_FS_N[:,i] = 0.9
 
     # print("Train_FS_N[10]: ", Train_FS_N[10])
     return Train_FS_N
@@ -464,82 +429,61 @@ count = 4
 # Initialize MONAD
 # Create Training Feature Space
 
+not_spam = ["person", "backpack", "handbag", "bottle", 
+"cup", "fork", "knife", "sandwich", 
+"cellphone", "book", "scissors"]
+
 print("\nStart creating Train_FS")
 Train_FS = list()
 trainingClasses = ["person"]
 
 # trainDir = sorted(glob.glob("/content/test/ped2/training/frames/01/*.jpg"))
-trainDir = sorted(glob.glob("/content/Data/0/*.jpg"))
 
-# Export video output
-myImage = cv2.imread(trainDir[0])
-myHeight, myWidth, _ = myImage.shape
 
 psnr = None
-
 import cv2
 
-# Opens the Video file
-# cap= cv2.VideoCapture('/content/input/0_2.mp4')
-cap= cv2.VideoCapture('/content/input/0_1.mp4')
 
-while(cap.isOpened()):
-    ret, frame = cap.read()
-    if ret == False:
-        break
+# trainDir = sorted(glob.glob("/content/input/ConStorexAbnormal/Normal/*.mp4"))
+
+trainDir = sorted(glob.glob("/content/input/training_videos/*.mp4"))
+
+print(trainDir)
+for dir in trainDir:
+    cap = cv2.VideoCapture(dir)
+    print("dir ", dir)
     
-    prev_time = time.time()
-    # print("dir ", imageDir)
-    # Run GAN to calc MSE
-    psnr = new_generatePSNR(frame, count)
-   
+    while(cap.isOpened()):
+        ret, frame = cap.read()
+        if ret == False:
+            break
+        
+        prev_time = time.time()
+        # Run GAN to calc MSE
+        psnr = new_generatePSNR(frame, count)
+    
+        if psnr is None:
+            fps = int(1/(time.time() - prev_time))
+            # print("FPS: {}".format(fps))
+            continue
 
-    # Run yolo to detect object and export infos
-    image, detections = new_image_detection(frame, 
-    network, class_names, class_colors, thresh)
+        # Run yolo to detect object and export infos
+        image, detections = new_image_detection(frame, 
+        network, class_names, class_colors, thresh)
+    
 
-    createNewTrainFS(detections, psnr)
-    count += 1
-
-    if count % 50 == 0:
-        fps = int(1/(time.time() - prev_time))
-        # print("FPS: {}".format(fps))
-        print("count {} - FPS {}".format(count, fps))
-
-    if psnr is None:
-        fps = int(1/(time.time() - prev_time))
-        print("FPS: {}".format(fps))
-        continue
+    
+        if count % 50 == 0:
+            fps = int(1/(time.time() - prev_time))
+            # print("FPS: {}".format(fps))
+            print("Video {} - FPS {}".format(dir, fps))
+    
+        createNewTrainFS(detections, psnr)
+        count += 1
 
     
 
 cap.release()
-
-"""
-for dir in trainDir:
-    prev_time = time.time()
-    # print("dir ", imageDir)
-    # Run GAN to calc MSE
-    psnr = generatePSNR(dir, count)
-   
-
-    # Run yolo to detect object and export infos
-    image, detections = image_detection(dir, 
-    network, class_names, class_colors, thresh)
-
-    if count %50 == 0:
-        fps = int(1/(time.time() - prev_time))
-        # print("FPS: {}".format(fps))
-        print("count {} - FPS {}".format(count, fps))
-
-    if psnr is None:
-        fps = int(1/(time.time() - prev_time))
-        print("FPS: {}".format(fps))
-        continue
-
-    createNewTrainFS(detections, psnr)
-    count += 1
-"""
 
 print("\nFinish creating Train_FS")
 Train_FS = np.array(Train_FS)
@@ -561,34 +505,6 @@ for i in range(1,4):
     
 for i in range(4, 18):                            
     Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
-
-"""
-import json
-with open('result_train_ucsd.json', 'r') as f:
-    D = json.load(f)
-
-train_objects = []
-for i in range(len(D)):
-    train_objects.append(D[i]["objects"])
-
-
-psnr_train = np.load('ped2_train',allow_pickle=True)['psnr']
-psnrError = []
-for vid in psnr_train:
-    for ps  in vid:
-        psnrError.append(ps)
-
-
-# Call this func to create Training Feature Space
-createTrainFS(train_objects, psnrError)
-Train_FS = np.array(Train_FS)
-print("Training classes: ", trainingClasses)
-
-g_min = np.min(Train_FS,0)
-g_max = np.max(Train_FS,0)
-print("g_max: ", g_max)
-print("g_min: ", g_min)
-"""
 
 # Normalize Feature Space
 # Check the w1, w2, w3 on the paper
@@ -630,114 +546,210 @@ images = sorted(glob.glob("/content/Data/1_4/*.jpg"))
 # images = sorted(glob.glob("/content/Data/test/*.jpg"))
 
 
-# Create Testing Feature Space
-Test_FS = list()
-testingClasses = ['person']
-
-# testing batch now is null
-# Recreate it
-batch = []
-
-
 # Export video output
-myImage = cv2.imread(images[0])
-myHeight, myWidth, _ = myImage.shape
-
-resultVid = cv2.VideoWriter('/content/output/vid/B2DL_test.avi', fourcc=cv2.VideoWriter_fourcc(*'XVID'), fps=25, frameSize=(myWidth, myHeight))
-
-psnr = None
-figData = [0]
-ind = 0
+myHeight, myWidth = 720, 1280
 
 
-"""
-cap= cv2.VideoCapture('/content/input/1_4.mp4')
 
-while(cap.isOpened()):
-    ret, frame = cap.read()
-    if ret == False:
-        break
+label = [{'name': 'Anomaly_001_1.mp4', 'start': 77, 'stop': 685}, {'name': 'Anomaly_002_1.mp4', 'start': 589, 'stop': 869}, 
+{'name': 'Anomaly_003_1.mp4', 'start': 545, 'stop': 670}, {'name': 'Anomaly_004_1.mp4', 'start': 1, 'stop': 91}, 
+{'name': 'Anomaly_005_1.mp4', 'start': 40, 'stop': 271}, {'name': 'Anomaly_006_1.mp4', 'start': 1, 'stop': 101}, 
+{'name': 'Anomaly_007_1.mp4', 'start': 176, 'stop': 234}, {'name': 'Anomaly_008_1.mp4', 'start': 1, 'stop': 164}, 
+{'name': 'Anomaly_009_1.mp4', 'start': 102, 'stop': 278}, {'name': 'Anomaly_010_1.mp4', 'start': 1, 'stop': 430}, 
+{'name': 'Anomaly_011_1.mp4', 'start': 213, 'stop': 292}, {'name': 'Anomaly_012_1.mp4', 'start': 138, 'stop': 1406}, 
+{'name': 'Anomaly_013_1.mp4', 'start': 116, 'stop': 225}, {'name': 'Anomaly_014_1.mp4', 'start': 131, 'stop': 495}, 
+{'name': 'Anomaly_015_1.mp4', 'start': 106, 'stop': 156}, {'name': 'Anomaly_016_1.mp4', 'start': 1, 'stop': 169}, 
+{'name': 'Anomaly_017_1.mp4', 'start': 949, 'stop': 1304}, {'name': 'Anomaly_018_1.mp4', 'start': 1, 'stop': 283}, 
+{'name': 'Normal_019_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_020_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_021_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_022_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_023_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_024_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_025_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_026_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_027_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_028_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_029_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_030_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_031_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_032_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_033_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_034_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_035_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_036_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_037_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_038_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_039_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_040_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_041_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_042_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_043_0.mp4', 'start': -1, 'stop': -1}]
+
+label_extend = [{'name': 'Anomaly_044_1.mp4', 'start': 1, 'stop': 371}, {'name': 'Anomaly_045_1.mp4', 'start': 1, 'stop': 215}, 
+{'name': 'Anomaly_046_1.mp4', 'start': 330, 'stop': 977}, {'name': 'Anomaly_047_1.mp4', 'start': 1, 'stop': 161}, 
+{'name': 'Anomaly_048_1.mp4', 'start': 1, 'stop': 178}, {'name': 'Anomaly_049_1.mp4', 'start': 1, 'stop': 228}, 
+{'name': 'Anomaly_050_1.mp4', 'start': 877, 'stop': 1054}, {'name': 'Anomaly_051_1.mp4', 'start': 386, 'stop': 482}, 
+{'name': 'Anomaly_052_1.mp4', 'start': 56, 'stop': 120}, {'name': 'Anomaly_053_1.mp4', 'start': 83, 'stop': 401}, 
+{'name': 'Anomaly_054_1.mp4', 'start': 1, 'stop': 315}, {'name': 'Anomaly_055_1.mp4', 'start': 558, 'stop': 1854}, 
+{'name': 'Anomaly_056_1.mp4', 'start': 34, 'stop': 607}, {'name': 'Normal_057_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_058_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_059_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_060_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_061_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_062_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_063_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_064_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_065_0.mp4', 'start': -1, 'stop': -1}, 
+{'name': 'Normal_066_0.mp4', 'start': -1, 'stop': -1}]
+
+
+# testingDir = sorted(glob.glob("/content/input/new_normal_vids/*.mp4"))
+
+
+training_list = []
+
+for item in trainDir:
+    training_list.append(item.split("/")[-1])
+
+print(training_list)
+
+
+testingDir = sorted(glob.glob("/content/input/ConStorexAbnormal/Anomaly/*.mp4"))
+
+print(testingDir)
+
+f = open("output.txt", "w")
+
+for dir in label:
+    # directory = dir.split("/")[-1].slit(".")[0]
+    directory = dir 
+
+    if label.index(dir) < 18:
+        dir = r"/content/input/ConStorexAbnormal/Anomaly/{}".format(directory["name"])
+    else:
+        dir = r"/content/input/ConStorexAbnormal/Normal/{}".format(directory["name"])
+
+
     
-    prev_time = time.time()
-    # print("dir ", imageDir)
-    # Run GAN to calc MSE
-    psnr = new_generatePSNR(frame, ind)
-
-    # Run yolo to detect object and export infos
-    image, detections = new_image_detection(frame, 
-    network, class_names, class_colors, thresh)
-
-    if ind > 64 and ind < 70:
-        cv2.imwrite("/content/output/{}.jpg".format(ind), image)
-    
-    if psnr is None:
-        fps = int(1/(time.time() - prev_time))
-        print("FPS: {}".format(fps))
-        print("figData len: ", len(figData))
+    if directory["name"] in training_list:
+        print("Video {} is in training list".format(directory["name"]))
         continue
 
-    frame_FS = createTestFS(detections, psnr)
-    t = list()
-    normalized_FS = normalizeTestFS(frame_FS, g_max, g_min)
-    for obj in normalized_FS:
-        t.append(obj[0] + knndis(np.transpose(obj[1:]),np.transpose(Train_FS_N[Ng:-1, 1:])))
-
-    dis = (np.max(t)) - 0.75  # IDK what 0.8 means :(
-    # print("Test_FS Error: ", dis)
-    figData.append(np.max((0,figData[ind] + dis)))
-
     
-    if ind > 64 and ind < 70:
+    # Create Testing Feature Space
+    Test_FS = list()
+    testingClasses = ['person']
 
-        print("\n\nframe_FS {}: ".format(ind+1))
-        for fr in frame_FS:
-          print(fr)
+    # testing batch now is null
+    # Recreate it
+    batch = []
 
-        print("\nDetection: ")
-        for det in detections:
-          if float(det[1]) > 40:
-              print(det)
-        print("\nfigData[{}] before: ".format(ind+1), figData[ind+1])
+    psnr = None
+    figData = [0]
 
-        # print("figData[{}] before: ".format(ind+1), figData[ind+1])
+    ind = 0
+    cap = cv2.VideoCapture(dir)
 
-
-    if ind > 5:
-        if figData[ind+1] - figData[ind] <=0:
-            if figData[ind] - figData[ind-1] <=0:
-                if figData[ind-1] - figData[ind-2] <=0:
-                    figData[ind+1] = 0
-
-    rgb_red = [0, 0, 255]
-    color = rgb_green = [60, 179, 0]
-
-    thickness=40*frame.shape[0]//600
-    starting_point  = (0, 0)
-    ending_point  = (frame.shape[1], frame.shape[0])
-    # if images.index(imageDir) > 65 and images.index(imageDir) < 69:
-    if ind > 64 and ind < 70:
-        print("figData[{}] after: ".format(ind+1), figData[ind+1])
-    if figData[ind+1] > 0.8:
-        color = rgb_red
+    height, width, _ = cap.read()[1].shape
 
 
-    cv2.rectangle(frame, (0, 0), ending_point, color, thickness)
-    resultVid.write(frame)
-    
-    # if save_labels:
-    #     save_annotations(imageDir, image, detections, class_names)
-    
-    # print("Image size: ", image.shape)
-    # print("FPS: {}".format(fps))
-    if ind % 50 == 0:
-        fps = float(1/(time.time() - prev_time))
-        print("index {} - fps {}".format(ind, fps))
-    ind += 1
+
+    resultVid = cv2.VideoWriter('/content/output/vid/{}.avi'.format(dir.split("/")[-1].split(".")[0]), 
+    fourcc=cv2.VideoWriter_fourcc(*'DIVX'), fps=30, frameSize=(width, height))
+    print("dir ", dir)
+
+    # 
+    predict = [0, 0, 0, 0]
+
+    while(cap.isOpened()):
+        ret, frame = cap.read()
+        if ret == False:
+            break
+            
+        
+        prev_time = time.time()
+        # print("dir ", imageDir)
+        # Run GAN to calc MSE
+        psnr = new_generatePSNR(frame, ind)
+        
+
+        # Run yolo to detect object and export infos
+        image, detections = new_image_detection(frame, 
+        network, class_names, class_colors, thresh)
+
+        if ind > 64 and ind < 70:
+            cv2.imwrite("/content/output/{}.jpg".format(ind), image)
+
+        if psnr is None:
+            fps = int(1/(time.time() - prev_time))
+            print("FPS: {}".format(fps))
+            print("figData len: ", len(figData))
+            continue
+
+        frame_FS = createTestFS(detections, psnr)
+        t = list()
+        normalized_FS = normalizeTestFS(frame_FS, g_max, g_min)
+        for obj in normalized_FS:
+            t.append(obj[0] + knndis(np.transpose(obj[1:]),np.transpose(Train_FS_N[Ng:-1, 1:])))
+
+        # dis = (np.max(t)) - 0.1  # IDK what 0.8 means :(
+        dis = (np.max(t)) - Base_lm # IDK what 0.8 means :(
+        
+        # print("\nTest_FS Error: ", dis)
+        figData.append(np.max((0,figData[ind] + dis)))
+
+
+        if ind > 64 and ind < 70:
+
+            print("\n\nframe_FS {}: ".format(ind+1))
+            for fr in frame_FS:
+              print(fr)
+
+            print("\nDetection: ")
+            for det in detections:
+              if float(det[1]) > 40:
+                  print(det)
+            print("\nfigData[{}] before: ".format(ind+1), figData[ind+1])
+
+            # print("figData[{}] before: ".format(ind+1), figData[ind+1])
+
+
+        if ind > 5:
+            if figData[ind+1] - figData[ind] <=0:
+                if figData[ind] - figData[ind-1] <=0:
+                    if figData[ind-1] - figData[ind-2] <=0:
+                        figData[ind+1] = 0
+
+        rgb_red = [0, 0, 255]
+        color = rgb_green = [60, 179, 0]
+
+        thickness=40*frame.shape[0]//600
+        starting_point  = (0, 0)
+        ending_point  = (frame.shape[1], frame.shape[0])
+        # if images.index(imageDir) > 65 and images.index(imageDir) < 69:
+        if ind > 64 and ind < 70:
+            print("figData[{}] after: ".format(ind+1), figData[ind+1])
+        # print("Dicision: ", figData[ind+1])
+        # if figData[ind+1] > 0.8:
+        if figData[ind+1] > 0:
+            color = rgb_red
+            predict.append(1)
+        else:
+            predict.append(0)
+
+
+        cv2.rectangle(frame, (0, 0), ending_point, color, thickness)
+        resultVid.write(frame)
+        # cv2.imwrite("/content/output/frames/{}.jpg".format(ind), frame)
+
+        # if save_labels:
+        #     save_annotations(imageDir, image, detections, class_names)
+
+        # print("Image size: ", image.shape)
+        # print("FPS: {}".format(fps))
+        if ind % 50 == 0:
+            fps = float(1/(time.time() - prev_time))
+            print("Video {} - FPS {}".format(dir, fps))
+        ind += 1
+
+
+    resultVid.release()
+    print("\n")
+    print("Video {}".format(directory["name"]))
+    print(predict)
+    f.write(str(predict) + "\n")
+
+f.close()
 
 cap.release()
 
 print("\n\nind: ", ind)
-resultVid.release()
+
 
 figData.pop(0)
 idx = np.where(np.array(figData)>0)[0]
@@ -803,4 +815,3 @@ plt.close()
 print('ODIT AUC:', metrics.auc(fpr2, tpr2))
 
 print("auc: ", np.trapz(tpr2, fpr2))
-"""

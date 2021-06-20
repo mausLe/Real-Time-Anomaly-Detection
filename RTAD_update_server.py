@@ -515,31 +515,6 @@ while(cap.isOpened()):
 
 cap.release()
 
-"""
-for dir in trainDir:
-    prev_time = time.time()
-    # print("dir ", imageDir)
-    # Run GAN to calc MSE
-    psnr = generatePSNR(dir, count)
-   
-
-    # Run yolo to detect object and export infos
-    image, detections = image_detection(dir, 
-    network, class_names, class_colors, thresh)
-
-    if count %50 == 0:
-        fps = int(1/(time.time() - prev_time))
-        # print("FPS: {}".format(fps))
-        print("count {} - FPS {}".format(count, fps))
-
-    if psnr is None:
-        fps = int(1/(time.time() - prev_time))
-        print("FPS: {}".format(fps))
-        continue
-
-    createNewTrainFS(detections, psnr)
-    count += 1
-"""
 
 print("\nFinish creating Train_FS")
 Train_FS = np.array(Train_FS)
@@ -562,33 +537,6 @@ for i in range(1,4):
 for i in range(4, 18):                            
     Train_FS_N[:,i] = 0*(Train_FS_N[:,i])
 
-"""
-import json
-with open('result_train_ucsd.json', 'r') as f:
-    D = json.load(f)
-
-train_objects = []
-for i in range(len(D)):
-    train_objects.append(D[i]["objects"])
-
-
-psnr_train = np.load('ped2_train',allow_pickle=True)['psnr']
-psnrError = []
-for vid in psnr_train:
-    for ps  in vid:
-        psnrError.append(ps)
-
-
-# Call this func to create Training Feature Space
-createTrainFS(train_objects, psnrError)
-Train_FS = np.array(Train_FS)
-print("Training classes: ", trainingClasses)
-
-g_min = np.min(Train_FS,0)
-g_max = np.max(Train_FS,0)
-print("g_max: ", g_max)
-print("g_min: ", g_min)
-"""
 
 # Normalize Feature Space
 # Check the w1, w2, w3 on the paper
@@ -649,9 +597,162 @@ psnr = None
 figData = [0]
 ind = 0
 
-
-"""
 cap= cv2.VideoCapture('/content/input/1_4.mp4')
+
+
+import traceback
+import logging
+import base64
+
+from flask import Flask, render_template, Response, request, session, redirect, url_for, jsonify
+from flask_restful import Resource, Api
+from flask_cors import CORS
+from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired)
+from configparser import SafeConfigParser
+
+#######################################
+#####LOAD CONFIG####
+config = SafeConfigParser()
+config.read("config/example.cfg")
+
+SERVICE_IP = str(config.get('main', 'SERVICE_IP'))
+SERVICE_PORT = int(config.get('main', 'SERVICE_PORT'))
+LOG_PATH = str(config.get('main', 'LOG_PATH'))
+WORKER_NUM = str(config.get('main', 'WORKER_NUM'))
+#######################################
+app = Flask(__name__)
+CORS(app)
+api = Api(app)
+#######################################
+#####CREATE LOGGER#####
+logging.basicConfig(filename=os.path.join(LOG_PATH, str(time.time())+".log"), filemode="w", level=logging.DEBUG, format='%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+console = logging.StreamHandler()
+console.setLevel(logging.ERROR)
+logging.getLogger("").addHandler(console)
+logger = logging.getLogger(__name__)
+#######################################
+#LOAD MODEL HERE
+#######################################
+print("SERVICE_IP", SERVICE_IP)
+print("SERVICE_PORT", SERVICE_PORT)
+print("LOG_PATH", LOG_PATH)
+print("WORKER_NUM", WORKER_NUM)
+print("API READY")
+
+start_time = 0
+class RTADLive(Resource):
+    def rtadPost(self):
+        global start_time
+        try :
+            try:
+                json_data = request.get_json(force=True)
+            except Exception as e:
+                print(str(e))
+                print(str(traceback.print_exc()))
+                return_result = {'code': '609', 'status': 'Wrong Input'}
+                
+                return jsonify(return_result)
+
+            ###########################
+            ###Add code here
+            ###PREDICT HERE
+
+            # Read Image
+            img = json_data["image_encoded"]
+            base64_type = img.encode("utf-8")
+            decoded_utf = base64.decodebytes(base64_type)
+            byteImage = np.frombuffer(decoded_utf, dtype=np.uint8)
+            frame = cv2.imdecode(byteImage, flags=1)
+            
+            
+            prev_time = time.time()
+            # print("dir ", imageDir)
+            # Run GAN to calc MSE
+            psnr = new_generatePSNR(frame, ind)
+
+            if psnr is None:
+                print("\npsnr is None")
+                return
+        
+            # Run yolo to detect object and export infos
+            image, detections = new_image_detection(frame, 
+            network, class_names, class_colors, thresh)
+        
+            if ind > 64 and ind < 70:
+                cv2.imwrite("/content/output/{}.jpg".format(ind), image)
+            
+            frame_FS = createTestFS(detections, psnr)
+            t = list()
+            normalized_FS = normalizeTestFS(frame_FS, g_max, g_min)
+            for obj in normalized_FS:
+                t.append(obj[0] + knndis(np.transpose(obj[1:]),np.transpose(Train_FS_N[Ng:-1, 1:])))
+        
+            dis = (np.max(t)) - 0.75  # IDK what 0.8 means :(
+            # print("Test_FS Error: ", dis)
+            figData.append(np.max((0,figData[ind] + dis)))
+        
+            
+            if ind > 64 and ind < 70:
+            
+                print("\n\nframe_FS {}: ".format(ind+1))
+                for fr in frame_FS:
+                  print(fr)
+        
+                print("\nDetection: ")
+                for det in detections:
+                  if float(det[1]) > 40:
+                      print(det)
+                print("\nfigData[{}] before: ".format(ind+1), figData[ind+1])
+        
+                # print("figData[{}] before: ".format(ind+1), figData[ind+1])
+        
+        
+            if ind > 5:
+                if figData[ind+1] - figData[ind] <=0:
+                    if figData[ind] - figData[ind-1] <=0:
+                        if figData[ind-1] - figData[ind-2] <=0:
+                            figData[ind+1] = 0
+        
+            rgb_red = [0, 0, 255]
+            color = rgb_green = [60, 179, 0]
+        
+            thickness=40*frame.shape[0]//600
+            starting_point  = (0, 0)
+            ending_point  = (frame.shape[1], frame.shape[0])
+            # if images.index(imageDir) > 65 and images.index(imageDir) < 69:
+            if ind > 64 and ind < 70:
+                print("figData[{}] after: ".format(ind+1), figData[ind+1])
+
+            status = "Normal"
+            if figData[ind+1] > 0.8:
+                status = "Warning"
+
+            if ind % 50 == 0:
+                fps = float(1/(time.time() - prev_time))
+                print("index {} - fps {}".format(ind, fps))
+            ind += 1
+
+            return_result = {'code': '1000', 'status': status}
+
+        except Exception as e:
+            logger.error(str(e))
+            logger.error(str(traceback.print_exc()))
+            return_result = {'code': '1001', 'status': "Failed"}
+        finally:
+            if count % 30 == 0:
+                print("Time to process at frame {} : ".format(count), 1/(time.time() - start_time)) # FPS = 1 / time to process loop
+            # print("Error ", count)
+            # print("Return", return_result)
+            
+            start_time = time.time() # start time of the loop
+            return jsonify(return_result)
+
+#######################################
+api.add_resource(RTADLive, '/predict')
+
+if __name__ == '__main__':
+    app.run(host=SERVICE_IP, port=SERVICE_PORT, debug=True)
+#######################################
 
 while(cap.isOpened()):
     ret, frame = cap.read()
@@ -736,6 +837,7 @@ while(cap.isOpened()):
 
 cap.release()
 
+
 print("\n\nind: ", ind)
 resultVid.release()
 
@@ -803,4 +905,3 @@ plt.close()
 print('ODIT AUC:', metrics.auc(fpr2, tpr2))
 
 print("auc: ", np.trapz(tpr2, fpr2))
-"""
