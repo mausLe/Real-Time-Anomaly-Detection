@@ -572,9 +572,9 @@ label = [{'name': 'Anomaly_001_1.mp4', 'start': 77, 'stop': 685}, {'name': 'Anom
 {'name': 'Normal_037_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_038_0.mp4', 'start': -1, 'stop': -1}, 
 {'name': 'Normal_039_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_040_0.mp4', 'start': -1, 'stop': -1}, 
 {'name': 'Normal_041_0.mp4', 'start': -1, 'stop': -1}, {'name': 'Normal_042_0.mp4', 'start': -1, 'stop': -1}, 
-{'name': 'Normal_043_0.mp4', 'start': -1, 'stop': -1}]
+{'name': 'Normal_043_0.mp4', 'start': -1, 'stop': -1},
 
-label_extend = [{'name': 'Anomaly_044_1.mp4', 'start': 1, 'stop': 371}, {'name': 'Anomaly_045_1.mp4', 'start': 1, 'stop': 215}, 
+{'name': 'Anomaly_044_1.mp4', 'start': 1, 'stop': 371}, {'name': 'Anomaly_045_1.mp4', 'start': 1, 'stop': 215}, 
 {'name': 'Anomaly_046_1.mp4', 'start': 330, 'stop': 977}, {'name': 'Anomaly_047_1.mp4', 'start': 1, 'stop': 161}, 
 {'name': 'Anomaly_048_1.mp4', 'start': 1, 'stop': 178}, {'name': 'Anomaly_049_1.mp4', 'start': 1, 'stop': 228}, 
 {'name': 'Anomaly_050_1.mp4', 'start': 877, 'stop': 1054}, {'name': 'Anomaly_051_1.mp4', 'start': 386, 'stop': 482}, 
@@ -603,7 +603,9 @@ testingDir = sorted(glob.glob("/content/input/ConStorexAbnormal/Anomaly/*.mp4"))
 
 print(testingDir)
 
-f = open("output.txt", "w")
+f = open("/content/output/dicision.txt", "w")
+file = open("/content/output/figdata.txt", "w")
+
 
 for dir in label:
     # directory = dir.split("/")[-1].slit(".")[0]
@@ -611,9 +613,12 @@ for dir in label:
 
     if label.index(dir) < 18:
         dir = r"/content/input/ConStorexAbnormal/Anomaly/{}".format(directory["name"])
-    else:
+    elif label.index(dir) < 43:
         dir = r"/content/input/ConStorexAbnormal/Normal/{}".format(directory["name"])
-
+    elif label.index(dir) < 56:
+        dir = r"/content/input/ConStorexAbnormal/Anomaly_Extended/{}".format(directory["name"])
+    else:
+        dir = r"/content/input/ConStorexAbnormal/Normal_Extended/{}".format(directory["name"])
 
     
     if directory["name"] in training_list:
@@ -643,7 +648,6 @@ for dir in label:
     fourcc=cv2.VideoWriter_fourcc(*'DIVX'), fps=30, frameSize=(width, height))
     print("dir ", dir)
 
-    # 
     predict = [0, 0, 0, 0]
 
     while(cap.isOpened()):
@@ -742,9 +746,15 @@ for dir in label:
     print("\n")
     print("Video {}".format(directory["name"]))
     print(predict)
+    f.write("Video {}".format(directory["name"]))
     f.write(str(predict) + "\n")
 
+    file.write("Video {}".format(directory["name"]))
+    file.write(str(figData) + "\n")
+
+
 f.close()
+file.close()
 
 cap.release()
 
